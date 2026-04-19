@@ -976,6 +976,7 @@ func (r *ComputeInstanceReconciler) shouldTriggerProvision(ctx context.Context, 
 	})
 }
 
+// handleDesiredConfigVersion sets status.desiredConfigVersion to the hash of spec.
 func (r *ComputeInstanceReconciler) handleDesiredConfigVersion(ctx context.Context, instance *v1alpha1.ComputeInstance) error {
 	version, err := provisioning.ComputeDesiredConfigVersion(instance.Spec)
 	if err != nil {
