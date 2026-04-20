@@ -178,8 +178,9 @@ const (
 	// True when desiredConfigVersion == reconciledConfigVersion, False while configuration is being applied.
 	ComputeInstanceConditionConfigurationApplied ComputeInstanceConditionType = "ConfigurationApplied"
 
-	// ComputeInstanceConditionAvailable means the compute instance is available
-	ComputeInstanceConditionAvailable ComputeInstanceConditionType = "Available"
+	// ComputeInstanceConditionReady means the compute instance is ready and accessible.
+	// Mirrors KubeVirt VirtualMachine Ready condition (virt-launcher readiness probe).
+	ComputeInstanceConditionReady ComputeInstanceConditionType = "Ready"
 
 	// ComputeInstanceConditionRestartInProgress indicates a restart is in progress
 	ComputeInstanceConditionRestartInProgress ComputeInstanceConditionType = "RestartInProgress"

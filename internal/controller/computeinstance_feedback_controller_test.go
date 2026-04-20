@@ -794,8 +794,8 @@ var _ = Describe("ComputeInstanceFeedbackReconciler", func() {
 			computeInstance.Status.Conditions = append(computeInstance.Status.Conditions, metav1.Condition{
 				Type:               string(osacv1alpha1.ComputeInstanceConditionProvisioned),
 				Status:             metav1.ConditionFalse,
-				Reason:             "AsExpected",
-				Message:            "Provisioning infrastructure resources",
+				Reason:             osacv1alpha1.ReasonProvisioningStorage,
+				Message:            "Creating DataVolumes for boot disk (20GiB)",
 				LastTransitionTime: metav1.NewTime(time.Now().UTC()),
 			})
 			Expect(k8sClient.Status().Update(ctx, computeInstance)).To(Succeed())
@@ -808,7 +808,8 @@ var _ = Describe("ComputeInstanceFeedbackReconciler", func() {
 			for _, cond := range mockClient.lastUpdate.GetStatus().GetConditions() {
 				if cond.GetType() == privatev1.ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_PROVISIONED {
 					Expect(cond.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_FALSE))
-					Expect(cond.GetMessage()).To(Equal("Provisioning infrastructure resources"))
+					Expect(cond.GetMessage()).To(Equal("Creating DataVolumes for boot disk (20GiB)"))
+					Expect(cond.GetReason()).To(Equal(osacv1alpha1.ReasonProvisioningStorage))
 					found = true
 					break
 				}

@@ -22,6 +22,17 @@ import (
 
 const (
 	defaultComputeInstanceNamespace string = "osac-computeinstance"
+
+	computeInstanceControllerName = "computeinstance-controller"
+
+	eventReasonTenantNotReady      = "TenantNotReady"
+	eventReasonProvisioningStorage = "ProvisioningStorage"
+	eventReasonWaitingForVM        = "WaitingForVM"
+	eventReasonInfrastructureReady = "InfrastructureReady"
+	eventReasonReady               = "Ready"
+	eventReasonNotReady            = "NotReady"
+
+	eventActionReconcile = "Reconcile"
 )
 
 var (

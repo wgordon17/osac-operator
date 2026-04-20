@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -62,6 +63,7 @@ var errSubnetNotFound = errors.New("subnet CR not found")
 type ComputeInstanceReconciler struct {
 	client.Client
 	Scheme                   *runtime.Scheme
+	Recorder                 events.EventRecorder
 	mgr                      mcmanager.Manager
 	ComputeInstanceNamespace string
 	TenantNamespace          string
@@ -101,6 +103,7 @@ func NewComputeInstanceReconciler(
 	return &ComputeInstanceReconciler{
 		Client:                   mgr.GetLocalManager().GetClient(),
 		Scheme:                   mgr.GetLocalManager().GetScheme(),
+		Recorder:                 mgr.GetLocalManager().GetEventRecorder(computeInstanceControllerName),
 		mgr:                      mgr,
 		ComputeInstanceNamespace: computeInstanceNamespace,
 		TenantNamespace:          tenantNamespace,
@@ -116,6 +119,7 @@ func NewComputeInstanceReconciler(
 // +kubebuilder:rbac:groups=osac.openshift.io,resources=computeinstances/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=kubevirt.io,resources=virtualmachines;virtualmachineinstances,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -637,7 +641,8 @@ func (r *ComputeInstanceReconciler) handleUpdate(ctx context.Context, _ reconcil
 		if scCond := tenant.GetStatusCondition(v1alpha1.TenantConditionStorageClassReady); scCond != nil && scCond.Message != "" {
 			msg = fmt.Sprintf("%s. %s: %s", msg, scCond.Type, scCond.Message)
 		}
-		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionFalse, msg, "TenantNotReady")
+		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionFalse, msg, v1alpha1.ReasonTenantNotReady)
+		r.Recorder.Eventf(instance, nil, corev1.EventTypeWarning, eventReasonTenantNotReady, eventActionReconcile, "%s", msg)
 		log.Info("tenant is not ready, requeueing", "tenant", tenant.GetName())
 		return ctrl.Result{RequeueAfter: defaultPreconditionRequeueInterval}, nil
 	}
@@ -668,8 +673,9 @@ func (r *ComputeInstanceReconciler) handleUpdate(ctx context.Context, _ reconcil
 	} else {
 		// No KubeVirt VM exists yet: infrastructure is being provisioned.
 		instance.Status.Phase = v1alpha1.ComputeInstancePhaseStarting
-		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionFalse, "", v1alpha1.ReasonAsExpected)
-		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionAvailable, metav1.ConditionFalse, "", v1alpha1.ReasonAsExpected)
+		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionFalse, "VirtualMachine not yet created, waiting for provisioning", v1alpha1.ReasonWaitingForVM)
+		r.Recorder.Eventf(instance, nil, corev1.EventTypeNormal, eventReasonWaitingForVM, eventActionReconcile, "VirtualMachine not yet created, waiting for provisioning")
+		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionReady, metav1.ConditionFalse, "", v1alpha1.ReasonAsExpected)
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionRestartRequired, metav1.ConditionFalse, "", v1alpha1.ReasonAsExpected)
 	}
 
@@ -751,7 +757,7 @@ func (r *ComputeInstanceReconciler) initializeStatusConditions(instance *v1alpha
 	)
 	r.initializeStatusCondition(
 		instance,
-		v1alpha1.ComputeInstanceConditionAvailable,
+		v1alpha1.ComputeInstanceConditionReady,
 		metav1.ConditionFalse,
 		v1alpha1.ReasonInitialized,
 	)
@@ -815,21 +821,28 @@ func (r *ComputeInstanceReconciler) handleKubeVirtVM(ctx context.Context, target
 	// (storage not yet ready). For all other states the VM CR exists and both compute
 	// and storage are allocated or in an operational state.
 	if kv.Status.PrintableStatus == kubevirtv1.VirtualMachineStatusProvisioning {
-		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionFalse, "Provisioning infrastructure resources", v1alpha1.ReasonAsExpected)
+		msg := fmt.Sprintf("Creating DataVolumes for boot disk (%dGiB)", instance.Spec.BootDisk.SizeGiB)
+		if len(instance.Spec.AdditionalDisks) > 0 {
+			msg = fmt.Sprintf("%s and %d additional disk(s)", msg, len(instance.Spec.AdditionalDisks))
+		}
+		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionFalse, msg, v1alpha1.ReasonProvisioningStorage)
+		r.Recorder.Eventf(instance, nil, corev1.EventTypeNormal, eventReasonProvisioningStorage, eventActionReconcile, "%s", msg)
 	} else {
-		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionTrue, "", v1alpha1.ReasonAsExpected)
+		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionTrue, "All infrastructure resources provisioned successfully", v1alpha1.ReasonInfrastructureReady)
+		r.Recorder.Eventf(instance, nil, corev1.EventTypeNormal, eventReasonInfrastructureReady, eventActionReconcile, "All infrastructure resources provisioned successfully")
 	}
 
-	// Available mirrors VirtualMachine.Status.Ready, synced from the VirtualMachineInstance
+	// Ready mirrors VirtualMachine.Status.Ready, synced from the VirtualMachineInstance
 	// Ready condition (set by the virt-launcher pod's readiness probe).
 	if kvVMHasConditionWithStatus(kv, kubevirtv1.VirtualMachineReady, corev1.ConditionTrue) {
 		ipAddress := r.getFirstVMIIPAddress(ctx, targetClient, kv.GetNamespace(), name)
 
 		log.Info("KubeVirt virtual machine (kubevirt resource) is ready", "computeinstance", instance.GetName(), "ipAddress", ipAddress)
-		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionAvailable, metav1.ConditionTrue, "", v1alpha1.ReasonAsExpected)
+		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionReady, metav1.ConditionTrue, "", v1alpha1.ReasonAsExpected)
 		instance.SetIPAddress(ipAddress)
+		r.Recorder.Eventf(instance, nil, corev1.EventTypeNormal, eventReasonReady, eventActionReconcile, "VirtualMachine is ready, IP: %s", ipAddress)
 	} else {
-		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionAvailable, metav1.ConditionFalse, "", v1alpha1.ReasonAsExpected)
+		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionReady, metav1.ConditionFalse, "", v1alpha1.ReasonAsExpected)
 	}
 
 	// RestartRequired mirrors KubeVirt's RestartRequired condition, which is set when

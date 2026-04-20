@@ -250,7 +250,7 @@ func (t *computeInstanceFeedbackReconcilerTask) syncState(ctx context.Context) {
 
 func (t *computeInstanceFeedbackReconcilerTask) syncConditions(ctx context.Context) {
 	t.syncConfigurationApplied(ctx)
-	t.syncAvailable(ctx)
+	t.syncReady(ctx)
 	t.syncRestartInProgress(ctx)
 	t.syncRestartFailed(ctx)
 	t.syncProvisioned(ctx)
@@ -266,13 +266,13 @@ func (t *computeInstanceFeedbackReconcilerTask) syncConfigurationApplied(ctx con
 	t.syncVMConditionFromCR(privatev1.ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_CONFIGURATION_APPLIED, crCondition)
 }
 
-// syncAvailable synchronizes the AVAILABLE VM condition from the Available CR condition.
-func (t *computeInstanceFeedbackReconcilerTask) syncAvailable(ctx context.Context) {
-	crCondition := t.object.GetStatusCondition(ckv1alpha1.ComputeInstanceConditionAvailable)
+// syncReady synchronizes the READY VM condition from the Ready CR condition.
+func (t *computeInstanceFeedbackReconcilerTask) syncReady(ctx context.Context) {
+	crCondition := t.object.GetStatusCondition(ckv1alpha1.ComputeInstanceConditionReady)
 	if crCondition == nil {
 		return
 	}
-	t.syncVMConditionFromCR(privatev1.ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_AVAILABLE, crCondition)
+	t.syncVMConditionFromCR(privatev1.ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_READY, crCondition)
 }
 
 // syncRestartInProgress synchronizes the RESTART_IN_PROGRESS VM condition from the RestartInProgress CR condition.
@@ -317,6 +317,7 @@ func (t *computeInstanceFeedbackReconcilerTask) syncVMConditionFromCR(vmConditio
 	oldStatus := vmCondition.GetStatus()
 	newStatus := t.mapConditionStatus(crCondition.Status)
 	vmCondition.SetStatus(newStatus)
+	vmCondition.SetReason(crCondition.Reason)
 	vmCondition.SetMessage(crCondition.Message)
 	if newStatus != oldStatus {
 		vmCondition.SetLastTransitionTime(timestamppb.Now())

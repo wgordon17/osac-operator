@@ -27,6 +27,7 @@ const (
 	ConditionDeleting              = "Deleting"
 	ConditionCompleted             = "Completed"
 	ConditionAvailable             = "Available"
+	ConditionReady                 = "Ready"
 )
 
 // Common reason constants
@@ -39,4 +40,9 @@ const (
 	ReasonDeleting         = "Deleting"
 	ReasonWebhookTriggered = "WebhookTriggered"
 	ReasonWebhookFailed    = "WebhookFailed"
+
+	ReasonTenantNotReady      = "TenantNotReady"
+	ReasonProvisioningStorage = "ProvisioningStorage"
+	ReasonWaitingForVM        = "WaitingForVM"
+	ReasonInfrastructureReady = "InfrastructureReady"
 )
