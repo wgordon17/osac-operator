@@ -45,8 +45,9 @@ const (
 // PublicIPPoolReconciler reconciles a PublicIPPool object
 type PublicIPPoolReconciler struct {
 	client.Client
-	APIReader            client.Reader
-	Scheme               *runtime.Scheme
+	APIReader client.Reader
+	Scheme    *runtime.Scheme
+	// mgr and targetCluster are stored for future multi-cluster target client resolution
 	mgr                  mcmanager.Manager
 	NetworkingNamespace  string
 	ProvisioningProvider provisioning.ProvisioningProvider
@@ -64,11 +65,14 @@ func NewPublicIPPoolReconciler(
 	maxJobHistory int,
 	targetCluster mc.ClusterName,
 ) *PublicIPPoolReconciler {
+	if mgr == nil {
+		panic("mgr must not be nil")
+	}
 	if statusPollInterval <= 0 {
-		statusPollInterval = DefaultStatusPollInterval
+		statusPollInterval = provisioning.DefaultStatusPollInterval
 	}
 	if maxJobHistory <= 0 {
-		maxJobHistory = DefaultMaxJobHistory
+		maxJobHistory = provisioning.DefaultMaxJobHistory
 	}
 	return &PublicIPPoolReconciler{
 		Client:               mgr.GetLocalManager().GetClient(),

@@ -45,8 +45,9 @@ const (
 // SubnetReconciler reconciles a Subnet object
 type SubnetReconciler struct {
 	client.Client
-	APIReader            client.Reader
-	Scheme               *runtime.Scheme
+	APIReader client.Reader
+	Scheme    *runtime.Scheme
+	// mgr and targetCluster are stored for future multi-cluster target client resolution
 	mgr                  mcmanager.Manager
 	NetworkingNamespace  string
 	ProvisioningProvider provisioning.ProvisioningProvider
@@ -64,11 +65,14 @@ func NewSubnetReconciler(
 	maxJobHistory int,
 	targetCluster mc.ClusterName,
 ) *SubnetReconciler {
+	if mgr == nil {
+		panic("mgr must not be nil")
+	}
 	if statusPollInterval <= 0 {
-		statusPollInterval = DefaultStatusPollInterval
+		statusPollInterval = provisioning.DefaultStatusPollInterval
 	}
 	if maxJobHistory <= 0 {
-		maxJobHistory = DefaultMaxJobHistory
+		maxJobHistory = provisioning.DefaultMaxJobHistory
 	}
 	return &SubnetReconciler{
 		Client:               mgr.GetLocalManager().GetClient(),

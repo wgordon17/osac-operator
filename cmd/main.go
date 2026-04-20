@@ -712,7 +712,7 @@ func main() {
 		setupLog.Info("gRPC connection to fulfillment service is disabled")
 	}
 
-	maxJobHistory := helpers.GetEnvWithDefault(envMaxJobHistory, controller.DefaultMaxJobHistory, func(v int) bool {
+	maxJobHistory := helpers.GetEnvWithDefault(envMaxJobHistory, provisioning.DefaultMaxJobHistory, func(v int) bool {
 		return v >= 1
 	})
 	setupLog.Info("job history configuration", "maxJobs", maxJobHistory)

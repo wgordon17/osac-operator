@@ -46,12 +46,6 @@ import (
 )
 
 const (
-	// DefaultMaxJobHistory is the default number of jobs to keep in status.jobs array
-	DefaultMaxJobHistory = 10
-
-	// DefaultStatusPollInterval is the default interval for polling provider job status
-	DefaultStatusPollInterval = 30 * time.Second
-
 	// defaultPreconditionRequeueInterval is the requeue delay when a precondition for
 	// reconciliation is not yet met (e.g. parent resource not found, configuration
 	// not populated, or dependent resource not in a ready state)
@@ -87,17 +81,20 @@ func NewComputeInstanceReconciler(
 	maxJobHistory int,
 	targetCluster mc.ClusterName,
 ) *ComputeInstanceReconciler {
+	if mgr == nil {
+		panic("mgr must not be nil")
+	}
 
 	if computeInstanceNamespace == "" {
 		computeInstanceNamespace = defaultComputeInstanceNamespace
 	}
 
-	if statusPollInterval == 0 {
-		statusPollInterval = 30 * time.Second
+	if statusPollInterval <= 0 {
+		statusPollInterval = provisioning.DefaultStatusPollInterval
 	}
 
 	if maxJobHistory <= 0 {
-		maxJobHistory = DefaultMaxJobHistory
+		maxJobHistory = provisioning.DefaultMaxJobHistory
 	}
 
 	return &ComputeInstanceReconciler{
