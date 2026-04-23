@@ -31,3 +31,14 @@ jobs:
     - run: |
         buf generate
         git diff --exit-code
+
+  docs:
+    name: Verify CRD docs
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - name: Verify CRD docs are up to date
+      run: make docs-verify

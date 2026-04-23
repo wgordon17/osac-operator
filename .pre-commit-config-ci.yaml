@@ -19,3 +19,13 @@ repos:
       files: \.(yaml|yml)$
       types: [file, yaml]
       entry: yamllint --strict
+
+- repo: local
+  hooks:
+  - id: docs-verify
+    name: Verify CRD docs are up to date
+    entry: make docs-verify
+    language: system
+    pass_filenames: false
+    stages: [pre-push]
+    files: 'api/v1alpha1/.*_types\.go$'
