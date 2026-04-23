@@ -116,7 +116,7 @@ func (r *TenantReconciler) handleUpdate(ctx context.Context, req reconcile.Reque
 	// Ready. Any early return below leaves the status in a clean Progressing state.
 	instance.Status.Phase = v1alpha1.TenantPhaseProgressing
 	instance.Status.Namespace = ""
-	instance.Status.StorageClass = ""
+	instance.Status.StorageClasses = nil
 
 	// Get target cluster client where namespace, StorageClass, and UDN are reconciled
 	targetClient, err := r.getTargetClient(ctx)
@@ -166,7 +166,9 @@ func (r *TenantReconciler) handleUpdate(ctx context.Context, req reconcile.Reque
 		scResult.message)
 
 	instance.Status.Namespace = namespace.GetName()
-	instance.Status.StorageClass = scResult.name
+	instance.Status.StorageClasses = []v1alpha1.ResolvedStorageClass{
+		{Name: scResult.name, Tier: "default"},
+	}
 	instance.Status.Phase = v1alpha1.TenantPhaseReady
 
 	return ctrl.Result{}, nil
