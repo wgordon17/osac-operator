@@ -381,11 +381,13 @@ func (r *TenantReconciler) SetupWithManager(mgr mcmanager.Manager) error {
 }
 
 // storageClassTenantPredicate returns a predicate that passes only StorageClasses
-// carrying the osac.openshift.io/tenant label (any value).
+// carrying both the osac.openshift.io/tenant and osac.openshift.io/storage-tier labels.
 func storageClassTenantPredicate() predicate.Predicate {
 	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
-		_, exists := obj.GetLabels()[osacTenantAnnotation]
-		return exists
+		labels := obj.GetLabels()
+		_, hasTenant := labels[osacTenantAnnotation]
+		_, hasTier := labels[osacStorageTierLabel]
+		return hasTenant && hasTier
 	})
 }
 

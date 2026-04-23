@@ -84,6 +84,8 @@ type TenantStatus struct {
 	// StorageClasses lists all resolved StorageClass mappings for the tenant,
 	// one per storage tier.
 	// +kubebuilder:validation:Optional
+	// +listType=map
+	// +listMapKey=tier
 	StorageClasses []ResolvedStorageClass `json:"storageClasses,omitempty"`
 
 	// Conditions holds an array of metav1.Condition that describe the state of the Tenant
