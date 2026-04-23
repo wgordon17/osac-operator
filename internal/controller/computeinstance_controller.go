@@ -641,8 +641,11 @@ func (r *ComputeInstanceReconciler) handleUpdate(ctx context.Context, _ reconcil
 		if scCond := tenant.GetStatusCondition(v1alpha1.TenantConditionStorageClassReady); scCond != nil && scCond.Message != "" {
 			msg = fmt.Sprintf("%s. %s: %s", msg, scCond.Type, scCond.Message)
 		}
+		oldReason := conditionReason(instance, v1alpha1.ComputeInstanceConditionProvisioned)
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionFalse, msg, v1alpha1.ReasonTenantNotReady)
-		r.Recorder.Eventf(instance, nil, corev1.EventTypeWarning, eventReasonTenantNotReady, eventActionReconcile, "%s", msg)
+		if oldReason != v1alpha1.ReasonTenantNotReady {
+			r.Recorder.Eventf(instance, nil, corev1.EventTypeWarning, eventReasonTenantNotReady, eventActionReconcile, "%s", msg)
+		}
 		log.Info("tenant is not ready, requeueing", "tenant", tenant.GetName())
 		return ctrl.Result{RequeueAfter: defaultPreconditionRequeueInterval}, nil
 	}
@@ -673,8 +676,11 @@ func (r *ComputeInstanceReconciler) handleUpdate(ctx context.Context, _ reconcil
 	} else {
 		// No KubeVirt VM exists yet: infrastructure is being provisioned.
 		instance.Status.Phase = v1alpha1.ComputeInstancePhaseStarting
+		oldReason := conditionReason(instance, v1alpha1.ComputeInstanceConditionProvisioned)
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionFalse, "VirtualMachine not yet created, waiting for provisioning", v1alpha1.ReasonWaitingForVM)
-		r.Recorder.Eventf(instance, nil, corev1.EventTypeNormal, eventReasonWaitingForVM, eventActionReconcile, "VirtualMachine not yet created, waiting for provisioning")
+		if oldReason != v1alpha1.ReasonWaitingForVM {
+			r.Recorder.Eventf(instance, nil, corev1.EventTypeNormal, eventReasonWaitingForVM, eventActionReconcile, "VirtualMachine not yet created, waiting for provisioning")
+		}
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionReady, metav1.ConditionFalse, "", v1alpha1.ReasonAsExpected)
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionRestartRequired, metav1.ConditionFalse, "", v1alpha1.ReasonAsExpected)
 	}
@@ -820,27 +826,35 @@ func (r *ComputeInstanceReconciler) handleKubeVirtVM(ctx context.Context, target
 	// While PrintableStatus="Provisioning", KubeVirt is still creating DataVolumes
 	// (storage not yet ready). For all other states the VM CR exists and both compute
 	// and storage are allocated or in an operational state.
+	oldProvisionedReason := conditionReason(instance, v1alpha1.ComputeInstanceConditionProvisioned)
 	if kv.Status.PrintableStatus == kubevirtv1.VirtualMachineStatusProvisioning {
 		msg := fmt.Sprintf("Creating DataVolumes for boot disk (%dGiB)", instance.Spec.BootDisk.SizeGiB)
 		if len(instance.Spec.AdditionalDisks) > 0 {
 			msg = fmt.Sprintf("%s and %d additional disk(s)", msg, len(instance.Spec.AdditionalDisks))
 		}
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionFalse, msg, v1alpha1.ReasonProvisioningStorage)
-		r.Recorder.Eventf(instance, nil, corev1.EventTypeNormal, eventReasonProvisioningStorage, eventActionReconcile, "%s", msg)
+		if oldProvisionedReason != v1alpha1.ReasonProvisioningStorage {
+			r.Recorder.Eventf(instance, nil, corev1.EventTypeNormal, eventReasonProvisioningStorage, eventActionReconcile, "%s", msg)
+		}
 	} else {
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionTrue, "All infrastructure resources provisioned successfully", v1alpha1.ReasonInfrastructureReady)
-		r.Recorder.Eventf(instance, nil, corev1.EventTypeNormal, eventReasonInfrastructureReady, eventActionReconcile, "All infrastructure resources provisioned successfully")
+		if oldProvisionedReason != v1alpha1.ReasonInfrastructureReady {
+			r.Recorder.Eventf(instance, nil, corev1.EventTypeNormal, eventReasonInfrastructureReady, eventActionReconcile, "All infrastructure resources provisioned successfully")
+		}
 	}
 
 	// Ready mirrors VirtualMachine.Status.Ready, synced from the VirtualMachineInstance
 	// Ready condition (set by the virt-launcher pod's readiness probe).
+	oldReadyStatus := conditionStatus(instance, v1alpha1.ComputeInstanceConditionReady)
 	if kvVMHasConditionWithStatus(kv, kubevirtv1.VirtualMachineReady, corev1.ConditionTrue) {
 		ipAddress := r.getFirstVMIIPAddress(ctx, targetClient, kv.GetNamespace(), name)
 
 		log.Info("KubeVirt virtual machine (kubevirt resource) is ready", "computeinstance", instance.GetName(), "ipAddress", ipAddress)
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionReady, metav1.ConditionTrue, "", v1alpha1.ReasonAsExpected)
 		instance.SetIPAddress(ipAddress)
-		r.Recorder.Eventf(instance, nil, corev1.EventTypeNormal, eventReasonReady, eventActionReconcile, "VirtualMachine is ready, IP: %s", ipAddress)
+		if oldReadyStatus != metav1.ConditionTrue {
+			r.Recorder.Eventf(instance, nil, corev1.EventTypeNormal, eventReasonReady, eventActionReconcile, "VirtualMachine is ready, IP: %s", ipAddress)
+		}
 	} else {
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionReady, metav1.ConditionFalse, "", v1alpha1.ReasonAsExpected)
 	}
@@ -980,4 +994,20 @@ func (r *ComputeInstanceReconciler) handleDesiredConfigVersion(ctx context.Conte
 	}
 	instance.Status.DesiredConfigVersion = version
 	return nil
+}
+
+func conditionReason(instance *v1alpha1.ComputeInstance, condType v1alpha1.ComputeInstanceConditionType) string {
+	cond := instance.GetStatusCondition(condType)
+	if cond == nil {
+		return ""
+	}
+	return cond.Reason
+}
+
+func conditionStatus(instance *v1alpha1.ComputeInstance, condType v1alpha1.ComputeInstanceConditionType) metav1.ConditionStatus {
+	cond := instance.GetStatusCondition(condType)
+	if cond == nil {
+		return metav1.ConditionUnknown
+	}
+	return cond.Status
 }

@@ -1509,7 +1509,7 @@ var _ = Describe("ComputeInstance Controller", func() {
 				g.Expect(cached.Status.Phase).To(Equal(osacv1alpha1.TenantPhaseReady))
 			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 
-			// Second reconcile with Ready tenant → Provisioned=False/AsExpected (no KubeVirt VM)
+			// Second reconcile with Ready tenant → Provisioned=False/WaitingForVM (no KubeVirt VM)
 			_, err = controllerReconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{NamespacedName: nn}})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -1518,8 +1518,8 @@ var _ = Describe("ComputeInstance Controller", func() {
 				cond := ci.GetStatusCondition(osacv1alpha1.ComputeInstanceConditionProvisioned)
 				g.Expect(cond).NotTo(BeNil())
 				g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-				g.Expect(cond.Reason).To(Equal(osacv1alpha1.ReasonAsExpected))
-				g.Expect(cond.Message).To(BeEmpty())
+				g.Expect(cond.Reason).To(Equal(osacv1alpha1.ReasonWaitingForVM))
+				g.Expect(cond.Message).To(Equal("VirtualMachine not yet created, waiting for provisioning"))
 			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 		})
 	})

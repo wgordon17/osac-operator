@@ -30,7 +30,6 @@ const (
 	eventReasonWaitingForVM        = "WaitingForVM"
 	eventReasonInfrastructureReady = "InfrastructureReady"
 	eventReasonReady               = "Ready"
-	eventReasonNotReady            = "NotReady"
 
 	eventActionReconcile = "Reconcile"
 )
