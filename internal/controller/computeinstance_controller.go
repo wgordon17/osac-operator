@@ -592,12 +592,12 @@ func (r *ComputeInstanceReconciler) syncMetadataPreflight(ctx context.Context, i
 		if err := r.Update(ctx, instance); err != nil {
 			return "", err
 		}
-		// Re-fetch so we have the latest resourceVersion and status; Update() may not
-		// return the full status (status subresource is separate), and we need the
-		// latest version to avoid 409 conflicts on later status updates.
-		if err := r.Get(ctx, client.ObjectKeyFromObject(instance), instance); err != nil {
-			return "", err
-		}
+		// r.Update() returns the full server response via .Into(obj): the annotation
+		// we just wrote, the latest ResourceVersion, and the current server-side status
+		// are all present in instance after this call. No re-fetch is needed.
+		// A cache-based r.Get() here would race against the async watch stream and
+		// return a stale version that wipes the annotation from instance before it
+		// reaches the AAP/EDA payload in handleProvisioning.
 	}
 
 	return subnetTargetNamespace, nil
