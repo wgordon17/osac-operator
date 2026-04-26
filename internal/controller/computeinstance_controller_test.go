@@ -1254,6 +1254,7 @@ var _ = Describe("ComputeInstance Controller", func() {
 			Expect(k8sClient.Create(ctx, tenant)).To(Succeed())
 			tenant.Status.Phase = osacv1alpha1.TenantPhaseProgressing
 			Expect(k8sClient.Status().Update(ctx, tenant)).To(Succeed())
+			fmt.Fprintf(GinkgoWriter, "[1a] Tenant %q created with Phase=%s\n", tenantName, tenant.Status.Phase)
 
 			nn := types.NamespacedName{Name: resourceName, Namespace: namespaceName}
 			resource := &osacv1alpha1.ComputeInstance{
@@ -1267,6 +1268,7 @@ var _ = Describe("ComputeInstance Controller", func() {
 				Spec: newTestComputeInstanceSpec("test_template"),
 			}
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			fmt.Fprintf(GinkgoWriter, "[1a] ComputeInstance %q created\n", resourceName)
 
 			fakeRecorder := events.NewFakeRecorder(100)
 			controllerReconciler := NewComputeInstanceReconciler(testMcManager, "", namespaceName, &mockProvisioningProvider{name: string(provisioning.ProviderTypeAAP)}, 100*time.Millisecond, 0, mcmanager.LocalCluster)
@@ -1277,6 +1279,7 @@ var _ = Describe("ComputeInstance Controller", func() {
 			}, 2*time.Second, 10*time.Millisecond).Should(Succeed())
 
 			// First reconcile — should emit TenantNotReady event
+			fmt.Fprintf(GinkgoWriter, "[1a] Reconcile 1: Tenant Phase=%s (expecting TenantNotReady event)\n", tenant.Status.Phase)
 			_, err := controllerReconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{NamespacedName: nn}})
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(fakeRecorder.Events).Should(Receive(And(
@@ -1293,12 +1296,125 @@ var _ = Describe("ComputeInstance Controller", func() {
 				g.Expect(cond.Reason).To(Equal(osacv1alpha1.ReasonTenantNotReady))
 			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 
+			ci := &osacv1alpha1.ComputeInstance{}
+			Expect(controllerReconciler.Client.Get(ctx, nn, ci)).To(Succeed())
+			cond := ci.GetStatusCondition(osacv1alpha1.ComputeInstanceConditionProvisioned)
+			fmt.Fprintf(GinkgoWriter, "[1a] After Reconcile 1: Provisioned condition Status=%s Reason=%s Message=%q\n", cond.Status, cond.Reason, cond.Message)
+
 			// Second reconcile — same state, should NOT emit again
+			fmt.Fprintf(GinkgoWriter, "[1a] Reconcile 2: Tenant Phase=%s (same state, expecting NO event)\n", tenant.Status.Phase)
 			_, err = controllerReconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{NamespacedName: nn}})
 			Expect(err).NotTo(HaveOccurred())
 			Consistently(fakeRecorder.Events, 500*time.Millisecond).ShouldNot(Receive(
 				ContainSubstring(eventReasonTenantNotReady),
 			))
+			fmt.Fprintf(GinkgoWriter, "[1a] Reconcile 2: No duplicate TenantNotReady event emitted (guard working)\n")
+		})
+
+		It("should emit WaitingForVM event when transitioning from TenantNotReady", func() {
+			const resourceName = "test-ci-event-waitvm"
+			const tenantName = "tenant-event-waitvm"
+			DeferCleanup(func() { deleteCI(resourceName) })
+			DeferCleanup(func() { deleteTenantInNamespace(ctx, namespaceName, tenantName) })
+
+			tenant := &osacv1alpha1.Tenant{
+				ObjectMeta: metav1.ObjectMeta{Name: tenantName, Namespace: namespaceName},
+			}
+			Expect(k8sClient.Create(ctx, tenant)).To(Succeed())
+			tenant.Status.Phase = osacv1alpha1.TenantPhaseProgressing
+			Expect(k8sClient.Status().Update(ctx, tenant)).To(Succeed())
+			fmt.Fprintf(GinkgoWriter, "[1b] Tenant %q created with Phase=%s\n", tenantName, tenant.Status.Phase)
+
+			nn := types.NamespacedName{Name: resourceName, Namespace: namespaceName}
+			resource := &osacv1alpha1.ComputeInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName,
+					Namespace: namespaceName,
+					Annotations: map[string]string{
+						osacTenantAnnotation: tenantName,
+					},
+				},
+				Spec: newTestComputeInstanceSpec("test_template"),
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			fmt.Fprintf(GinkgoWriter, "[1b] ComputeInstance %q created\n", resourceName)
+
+			fakeRecorder := events.NewFakeRecorder(100)
+			controllerReconciler := NewComputeInstanceReconciler(testMcManager, "", namespaceName, &mockProvisioningProvider{name: string(provisioning.ProviderTypeAAP)}, 100*time.Millisecond, 0, mcmanager.LocalCluster)
+			controllerReconciler.Recorder = fakeRecorder
+
+			Eventually(func() error {
+				return controllerReconciler.Client.Get(ctx, nn, &osacv1alpha1.ComputeInstance{})
+			}, 2*time.Second, 10*time.Millisecond).Should(Succeed())
+
+			// First reconcile — TenantNotReady event
+			fmt.Fprintf(GinkgoWriter, "[1b] Reconcile 1: Tenant Phase=%s (expecting TenantNotReady event)\n", tenant.Status.Phase)
+			_, err := controllerReconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{NamespacedName: nn}})
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(fakeRecorder.Events).Should(Receive(ContainSubstring(eventReasonTenantNotReady)))
+
+			ci := &osacv1alpha1.ComputeInstance{}
+			Expect(controllerReconciler.Client.Get(ctx, nn, ci)).To(Succeed())
+			cond := ci.GetStatusCondition(osacv1alpha1.ComputeInstanceConditionProvisioned)
+			if cond != nil {
+				fmt.Fprintf(GinkgoWriter, "[1b] After Reconcile 1: Provisioned Status=%s Reason=%s Message=%q\n", cond.Status, cond.Reason, cond.Message)
+			}
+
+			// Transition tenant to Ready
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: tenantName, Namespace: namespaceName}, tenant)).To(Succeed())
+			tenant.Status.Phase = osacv1alpha1.TenantPhaseReady
+			tenant.Status.Namespace = namespaceName
+			Expect(k8sClient.Status().Update(ctx, tenant)).To(Succeed())
+			fmt.Fprintf(GinkgoWriter, "[1b] Tenant %q transitioned to Phase=%s\n", tenantName, tenant.Status.Phase)
+
+			mgrClient := testMcManager.GetLocalManager().GetClient()
+			Eventually(func(g Gomega) {
+				cached := &osacv1alpha1.Tenant{}
+				g.Expect(mgrClient.Get(ctx, types.NamespacedName{Name: tenantName, Namespace: namespaceName}, cached)).To(Succeed())
+				g.Expect(cached.Status.Phase).To(Equal(osacv1alpha1.TenantPhaseReady))
+			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+
+			// Wait for cache to see Provisioned/TenantNotReady from first reconcile
+			Eventually(func(g Gomega) {
+				ci := &osacv1alpha1.ComputeInstance{}
+				g.Expect(controllerReconciler.Client.Get(ctx, nn, ci)).To(Succeed())
+				cond := ci.GetStatusCondition(osacv1alpha1.ComputeInstanceConditionProvisioned)
+				g.Expect(cond).NotTo(BeNil())
+				g.Expect(cond.Reason).To(Equal(osacv1alpha1.ReasonTenantNotReady))
+			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+			fmt.Fprintf(GinkgoWriter, "[1b] Cache synced: Provisioned Reason=TenantNotReady confirmed\n")
+
+			// Second reconcile — tenant Ready, no VM -> WaitingForVM event
+			fmt.Fprintf(GinkgoWriter, "[1b] Reconcile 2: Tenant Phase=Ready, no VM (expecting WaitingForVM event)\n")
+			_, err = controllerReconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{NamespacedName: nn}})
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(fakeRecorder.Events).Should(Receive(ContainSubstring(eventReasonWaitingForVM)))
+
+			ci = &osacv1alpha1.ComputeInstance{}
+			Expect(controllerReconciler.Client.Get(ctx, nn, ci)).To(Succeed())
+			cond = ci.GetStatusCondition(osacv1alpha1.ComputeInstanceConditionProvisioned)
+			if cond != nil {
+				fmt.Fprintf(GinkgoWriter, "[1b] After Reconcile 2: Provisioned Status=%s Reason=%s Message=%q\n", cond.Status, cond.Reason, cond.Message)
+			}
+
+			// Wait for cache to see Provisioned/WaitingForVM
+			Eventually(func(g Gomega) {
+				ci := &osacv1alpha1.ComputeInstance{}
+				g.Expect(controllerReconciler.Client.Get(ctx, nn, ci)).To(Succeed())
+				cond := ci.GetStatusCondition(osacv1alpha1.ComputeInstanceConditionProvisioned)
+				g.Expect(cond).NotTo(BeNil())
+				g.Expect(cond.Reason).To(Equal(osacv1alpha1.ReasonWaitingForVM))
+			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+			fmt.Fprintf(GinkgoWriter, "[1b] Cache synced: Provisioned Reason=WaitingForVM confirmed\n")
+
+			// Third reconcile — still no VM, should NOT re-emit
+			fmt.Fprintf(GinkgoWriter, "[1b] Reconcile 3: same state (expecting NO event)\n")
+			_, err = controllerReconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{NamespacedName: nn}})
+			Expect(err).NotTo(HaveOccurred())
+			Consistently(fakeRecorder.Events, 500*time.Millisecond).ShouldNot(Receive(
+				ContainSubstring(eventReasonWaitingForVM),
+			))
+			fmt.Fprintf(GinkgoWriter, "[1b] Reconcile 3: No duplicate WaitingForVM event emitted (guard working)\n")
 		})
 	})
 
