@@ -55,7 +55,7 @@ type ClusterOrderSpec struct {
 	// If not provided, the template's default release image is used.
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:MaxLength=512
-	// +kubebuilder:validation:Pattern=`.+/.+:.+`
+	// +kubebuilder:validation:Pattern=`^.+/.+:.+$`
 	ReleaseImage string `json:"releaseImage,omitempty"`
 	// Network contains cluster networking configuration.
 	// +kubebuilder:validation:Optional

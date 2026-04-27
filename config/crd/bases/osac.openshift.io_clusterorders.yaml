@@ -97,7 +97,7 @@ spec:
                   ReleaseImage is the OCP release image URL that controls the OpenShift version.
                   If not provided, the template's default release image is used.
                 maxLength: 512
-                pattern: .+/.+:.+
+                pattern: ^.+/.+:.+$
                 type: string
               sshPublicKey:
                 description: |-
