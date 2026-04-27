@@ -765,10 +765,12 @@ var _ = Describe("ComputeInstanceFeedbackReconciler", func() {
 		It("should sync Provisioned condition when True", func() {
 			computeInstance := &osacv1alpha1.ComputeInstance{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, computeInstance)).To(Succeed())
+
 			computeInstance.Status.Conditions = append(computeInstance.Status.Conditions, metav1.Condition{
 				Type:               string(osacv1alpha1.ComputeInstanceConditionProvisioned),
 				Status:             metav1.ConditionTrue,
-				Reason:             "AsExpected",
+				Reason:             osacv1alpha1.ReasonInfrastructureReady,
+				Message:            "All infrastructure resources provisioned successfully",
 				LastTransitionTime: metav1.NewTime(time.Now().UTC()),
 			})
 			Expect(k8sClient.Status().Update(ctx, computeInstance)).To(Succeed())
@@ -781,6 +783,8 @@ var _ = Describe("ComputeInstanceFeedbackReconciler", func() {
 			for _, cond := range mockClient.lastUpdate.GetStatus().GetConditions() {
 				if cond.GetType() == privatev1.ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_PROVISIONED {
 					Expect(cond.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_TRUE))
+					Expect(cond.GetReason()).To(Equal(osacv1alpha1.ReasonInfrastructureReady))
+					Expect(cond.GetMessage()).To(Equal("All infrastructure resources provisioned successfully"))
 					found = true
 					break
 				}

@@ -1254,7 +1254,6 @@ var _ = Describe("ComputeInstance Controller", func() {
 			Expect(k8sClient.Create(ctx, tenant)).To(Succeed())
 			tenant.Status.Phase = osacv1alpha1.TenantPhaseProgressing
 			Expect(k8sClient.Status().Update(ctx, tenant)).To(Succeed())
-			fmt.Fprintf(GinkgoWriter, "[1a] Tenant %q created with Phase=%s\n", tenantName, tenant.Status.Phase)
 
 			nn := types.NamespacedName{Name: resourceName, Namespace: namespaceName}
 			resource := &osacv1alpha1.ComputeInstance{
@@ -1268,7 +1267,6 @@ var _ = Describe("ComputeInstance Controller", func() {
 				Spec: newTestComputeInstanceSpec("test_template"),
 			}
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			fmt.Fprintf(GinkgoWriter, "[1a] ComputeInstance %q created\n", resourceName)
 
 			fakeRecorder := events.NewFakeRecorder(100)
 			controllerReconciler := NewComputeInstanceReconciler(testMcManager, "", namespaceName, &mockProvisioningProvider{name: string(provisioning.ProviderTypeAAP)}, 100*time.Millisecond, 0, mcmanager.LocalCluster)
@@ -1279,7 +1277,6 @@ var _ = Describe("ComputeInstance Controller", func() {
 			}, 2*time.Second, 10*time.Millisecond).Should(Succeed())
 
 			// First reconcile — should emit TenantNotReady event
-			fmt.Fprintf(GinkgoWriter, "[1a] Reconcile 1: Tenant Phase=%s (expecting TenantNotReady event)\n", tenant.Status.Phase)
 			_, err := controllerReconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{NamespacedName: nn}})
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(fakeRecorder.Events).Should(Receive(And(
@@ -1296,19 +1293,12 @@ var _ = Describe("ComputeInstance Controller", func() {
 				g.Expect(cond.Reason).To(Equal(osacv1alpha1.ReasonTenantNotReady))
 			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 
-			ci := &osacv1alpha1.ComputeInstance{}
-			Expect(controllerReconciler.Client.Get(ctx, nn, ci)).To(Succeed())
-			cond := ci.GetStatusCondition(osacv1alpha1.ComputeInstanceConditionProvisioned)
-			fmt.Fprintf(GinkgoWriter, "[1a] After Reconcile 1: Provisioned condition Status=%s Reason=%s Message=%q\n", cond.Status, cond.Reason, cond.Message)
-
 			// Second reconcile — same state, should NOT emit again
-			fmt.Fprintf(GinkgoWriter, "[1a] Reconcile 2: Tenant Phase=%s (same state, expecting NO event)\n", tenant.Status.Phase)
 			_, err = controllerReconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{NamespacedName: nn}})
 			Expect(err).NotTo(HaveOccurred())
 			Consistently(fakeRecorder.Events, 500*time.Millisecond).ShouldNot(Receive(
 				ContainSubstring(eventReasonTenantNotReady),
 			))
-			fmt.Fprintf(GinkgoWriter, "[1a] Reconcile 2: No duplicate TenantNotReady event emitted (guard working)\n")
 		})
 
 		It("should emit WaitingForVM event when transitioning from TenantNotReady", func() {
@@ -1323,7 +1313,6 @@ var _ = Describe("ComputeInstance Controller", func() {
 			Expect(k8sClient.Create(ctx, tenant)).To(Succeed())
 			tenant.Status.Phase = osacv1alpha1.TenantPhaseProgressing
 			Expect(k8sClient.Status().Update(ctx, tenant)).To(Succeed())
-			fmt.Fprintf(GinkgoWriter, "[1b] Tenant %q created with Phase=%s\n", tenantName, tenant.Status.Phase)
 
 			nn := types.NamespacedName{Name: resourceName, Namespace: namespaceName}
 			resource := &osacv1alpha1.ComputeInstance{
@@ -1337,7 +1326,6 @@ var _ = Describe("ComputeInstance Controller", func() {
 				Spec: newTestComputeInstanceSpec("test_template"),
 			}
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			fmt.Fprintf(GinkgoWriter, "[1b] ComputeInstance %q created\n", resourceName)
 
 			fakeRecorder := events.NewFakeRecorder(100)
 			controllerReconciler := NewComputeInstanceReconciler(testMcManager, "", namespaceName, &mockProvisioningProvider{name: string(provisioning.ProviderTypeAAP)}, 100*time.Millisecond, 0, mcmanager.LocalCluster)
@@ -1348,24 +1336,15 @@ var _ = Describe("ComputeInstance Controller", func() {
 			}, 2*time.Second, 10*time.Millisecond).Should(Succeed())
 
 			// First reconcile — TenantNotReady event
-			fmt.Fprintf(GinkgoWriter, "[1b] Reconcile 1: Tenant Phase=%s (expecting TenantNotReady event)\n", tenant.Status.Phase)
 			_, err := controllerReconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{NamespacedName: nn}})
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(fakeRecorder.Events).Should(Receive(ContainSubstring(eventReasonTenantNotReady)))
-
-			ci := &osacv1alpha1.ComputeInstance{}
-			Expect(controllerReconciler.Client.Get(ctx, nn, ci)).To(Succeed())
-			cond := ci.GetStatusCondition(osacv1alpha1.ComputeInstanceConditionProvisioned)
-			if cond != nil {
-				fmt.Fprintf(GinkgoWriter, "[1b] After Reconcile 1: Provisioned Status=%s Reason=%s Message=%q\n", cond.Status, cond.Reason, cond.Message)
-			}
 
 			// Transition tenant to Ready
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: tenantName, Namespace: namespaceName}, tenant)).To(Succeed())
 			tenant.Status.Phase = osacv1alpha1.TenantPhaseReady
 			tenant.Status.Namespace = namespaceName
 			Expect(k8sClient.Status().Update(ctx, tenant)).To(Succeed())
-			fmt.Fprintf(GinkgoWriter, "[1b] Tenant %q transitioned to Phase=%s\n", tenantName, tenant.Status.Phase)
 
 			mgrClient := testMcManager.GetLocalManager().GetClient()
 			Eventually(func(g Gomega) {
@@ -1382,20 +1361,11 @@ var _ = Describe("ComputeInstance Controller", func() {
 				g.Expect(cond).NotTo(BeNil())
 				g.Expect(cond.Reason).To(Equal(osacv1alpha1.ReasonTenantNotReady))
 			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
-			fmt.Fprintf(GinkgoWriter, "[1b] Cache synced: Provisioned Reason=TenantNotReady confirmed\n")
 
 			// Second reconcile — tenant Ready, no VM -> WaitingForVM event
-			fmt.Fprintf(GinkgoWriter, "[1b] Reconcile 2: Tenant Phase=Ready, no VM (expecting WaitingForVM event)\n")
 			_, err = controllerReconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{NamespacedName: nn}})
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(fakeRecorder.Events).Should(Receive(ContainSubstring(eventReasonWaitingForVM)))
-
-			ci = &osacv1alpha1.ComputeInstance{}
-			Expect(controllerReconciler.Client.Get(ctx, nn, ci)).To(Succeed())
-			cond = ci.GetStatusCondition(osacv1alpha1.ComputeInstanceConditionProvisioned)
-			if cond != nil {
-				fmt.Fprintf(GinkgoWriter, "[1b] After Reconcile 2: Provisioned Status=%s Reason=%s Message=%q\n", cond.Status, cond.Reason, cond.Message)
-			}
 
 			// Wait for cache to see Provisioned/WaitingForVM
 			Eventually(func(g Gomega) {
@@ -1405,16 +1375,37 @@ var _ = Describe("ComputeInstance Controller", func() {
 				g.Expect(cond).NotTo(BeNil())
 				g.Expect(cond.Reason).To(Equal(osacv1alpha1.ReasonWaitingForVM))
 			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
-			fmt.Fprintf(GinkgoWriter, "[1b] Cache synced: Provisioned Reason=WaitingForVM confirmed\n")
 
 			// Third reconcile — still no VM, should NOT re-emit
-			fmt.Fprintf(GinkgoWriter, "[1b] Reconcile 3: same state (expecting NO event)\n")
 			_, err = controllerReconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{NamespacedName: nn}})
 			Expect(err).NotTo(HaveOccurred())
 			Consistently(fakeRecorder.Events, 500*time.Millisecond).ShouldNot(Receive(
 				ContainSubstring(eventReasonWaitingForVM),
 			))
-			fmt.Fprintf(GinkgoWriter, "[1b] Reconcile 3: No duplicate WaitingForVM event emitted (guard working)\n")
+		})
+	})
+
+	Context("conditionReason and conditionStatus helpers", func() {
+		It("conditionReason returns empty string when condition does not exist", func() {
+			instance := &osacv1alpha1.ComputeInstance{}
+			Expect(conditionReason(instance, osacv1alpha1.ComputeInstanceConditionProvisioned)).To(Equal(""))
+		})
+
+		It("conditionReason returns the reason when condition exists", func() {
+			instance := &osacv1alpha1.ComputeInstance{}
+			instance.SetStatusCondition(osacv1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionFalse, "some message", osacv1alpha1.ReasonWaitingForVM)
+			Expect(conditionReason(instance, osacv1alpha1.ComputeInstanceConditionProvisioned)).To(Equal(osacv1alpha1.ReasonWaitingForVM))
+		})
+
+		It("conditionStatus returns ConditionUnknown when condition does not exist", func() {
+			instance := &osacv1alpha1.ComputeInstance{}
+			Expect(conditionStatus(instance, osacv1alpha1.ComputeInstanceConditionReady)).To(Equal(metav1.ConditionUnknown))
+		})
+
+		It("conditionStatus returns the correct status when condition exists", func() {
+			instance := &osacv1alpha1.ComputeInstance{}
+			instance.SetStatusCondition(osacv1alpha1.ComputeInstanceConditionReady, metav1.ConditionTrue, "", osacv1alpha1.ReasonAsExpected)
+			Expect(conditionStatus(instance, osacv1alpha1.ComputeInstanceConditionReady)).To(Equal(metav1.ConditionTrue))
 		})
 	})
 
