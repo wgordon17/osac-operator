@@ -169,7 +169,7 @@ func (r *TenantReconciler) handleUpdate(ctx context.Context, req reconcile.Reque
 	instance.Status.Namespace = namespace.GetName()
 	instance.Status.StorageClass = scResult.name
 	instance.Status.StorageClasses = []v1alpha1.ResolvedStorageClass{
-		{Name: scResult.name, Tier: "default"},
+		{Name: scResult.name, Tier: scResult.tier},
 	}
 	instance.Status.Phase = v1alpha1.TenantPhaseReady
 
@@ -181,8 +181,18 @@ func (r *TenantReconciler) handleUpdate(ctx context.Context, req reconcile.Reque
 // condition that should be set on the Tenant.
 type storageClassResult struct {
 	name    string
+	tier    string
 	reason  string
 	message string
+}
+
+// storageTierFromLabel reads the osac.openshift.io/storage-tier label from a
+// StorageClass. Returns "default" if the label is absent or empty.
+func storageTierFromLabel(sc *storagev1.StorageClass) string {
+	if tier := sc.GetLabels()[osacStorageTierLabel]; tier != "" {
+		return tier
+	}
+	return "default"
 }
 
 // joinStorageClassNames returns StorageClass metadata names as a comma-separated string for
@@ -211,11 +221,12 @@ func (r *TenantReconciler) getTenantStorageClass(ctx context.Context, targetClie
 
 	switch len(tenantSCList.Items) {
 	case 1:
-		scName := tenantSCList.Items[0].GetName()
+		sc := &tenantSCList.Items[0]
 		return storageClassResult{
-			name:    scName,
+			name:    sc.GetName(),
+			tier:    storageTierFromLabel(sc),
 			reason:  v1alpha1.TenantReasonFound,
-			message: fmt.Sprintf("StorageClass %q found for tenant %q", scName, tenantName),
+			message: fmt.Sprintf("StorageClass %q found for tenant %q", sc.GetName(), tenantName),
 		}, nil
 	case 0:
 		// No tenant SCs — evaluate shared Default SCs (Step 2) below.
@@ -239,13 +250,14 @@ func (r *TenantReconciler) getTenantStorageClass(ctx context.Context, targetClie
 
 	switch len(defaultSCList.Items) {
 	case 1:
-		scName := defaultSCList.Items[0].GetName()
+		sc := &defaultSCList.Items[0]
 		msg := fmt.Sprintf("No tenant-specific StorageClass found for tenant %q. "+
 			"Using shared Default StorageClass %q. Storage is not isolated for this tenant.",
-			tenantName, scName)
+			tenantName, sc.GetName())
 		log.Info(msg)
 		return storageClassResult{
-			name:    scName,
+			name:    sc.GetName(),
+			tier:    storageTierFromLabel(sc),
 			reason:  v1alpha1.TenantReasonSharedDefault,
 			message: msg,
 		}, nil
