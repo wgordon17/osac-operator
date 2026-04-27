@@ -676,11 +676,7 @@ func (r *ComputeInstanceReconciler) handleUpdate(ctx context.Context, _ reconcil
 	} else {
 		// No KubeVirt VM exists yet: infrastructure is being provisioned.
 		instance.Status.Phase = v1alpha1.ComputeInstancePhaseStarting
-		oldReason := conditionReason(instance, v1alpha1.ComputeInstanceConditionProvisioned)
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionProvisioned, metav1.ConditionFalse, "VirtualMachine not yet created, waiting for provisioning", v1alpha1.ReasonWaitingForVM)
-		if oldReason != v1alpha1.ReasonWaitingForVM {
-			r.Recorder.Eventf(instance, nil, corev1.EventTypeNormal, eventReasonWaitingForVM, eventActionReconcile, "VirtualMachine not yet created, waiting for provisioning")
-		}
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionReady, metav1.ConditionFalse, "", v1alpha1.ReasonAsExpected)
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionRestartRequired, metav1.ConditionFalse, "", v1alpha1.ReasonAsExpected)
 	}

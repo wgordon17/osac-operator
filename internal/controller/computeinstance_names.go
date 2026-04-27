@@ -27,9 +27,8 @@ const (
 
 	eventReasonTenantNotReady      = "TenantNotReady"
 	eventReasonProvisioningStorage = "ProvisioningStorage"
-	eventReasonWaitingForVM        = "WaitingForVM"
 	eventReasonInfrastructureReady = "InfrastructureReady"
-	eventReasonReady               = "Ready"
+	eventReasonReady = "Ready"
 
 	eventActionReconcile = "Reconcile"
 )

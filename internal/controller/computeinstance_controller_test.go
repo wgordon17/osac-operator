@@ -1301,7 +1301,7 @@ var _ = Describe("ComputeInstance Controller", func() {
 			))
 		})
 
-		It("should emit WaitingForVM event when transitioning from TenantNotReady", func() {
+		It("should set WaitingForVM when tenant becomes Ready without VM", func() {
 			const resourceName = "test-ci-event-waitvm"
 			const tenantName = "tenant-event-waitvm"
 			DeferCleanup(func() { deleteCI(resourceName) })
@@ -1362,12 +1362,9 @@ var _ = Describe("ComputeInstance Controller", func() {
 				g.Expect(cond.Reason).To(Equal(osacv1alpha1.ReasonTenantNotReady))
 			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 
-			// Second reconcile — tenant Ready, no VM -> WaitingForVM event
+			// Second reconcile — tenant Ready, no VM -> Provisioned WaitingForVM (no event; condition carries detail)
 			_, err = controllerReconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{NamespacedName: nn}})
 			Expect(err).NotTo(HaveOccurred())
-			Eventually(fakeRecorder.Events).Should(Receive(ContainSubstring(eventReasonWaitingForVM)))
-
-			// Wait for cache to see Provisioned/WaitingForVM
 			Eventually(func(g Gomega) {
 				ci := &osacv1alpha1.ComputeInstance{}
 				g.Expect(controllerReconciler.Client.Get(ctx, nn, ci)).To(Succeed())
@@ -1376,12 +1373,15 @@ var _ = Describe("ComputeInstance Controller", func() {
 				g.Expect(cond.Reason).To(Equal(osacv1alpha1.ReasonWaitingForVM))
 			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 
-			// Third reconcile — still no VM, should NOT re-emit
+			// Third reconcile — still no VM, reason unchanged
 			_, err = controllerReconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{NamespacedName: nn}})
 			Expect(err).NotTo(HaveOccurred())
-			Consistently(fakeRecorder.Events, 500*time.Millisecond).ShouldNot(Receive(
-				ContainSubstring(eventReasonWaitingForVM),
-			))
+			Eventually(func(g Gomega) {
+				ci := &osacv1alpha1.ComputeInstance{}
+				g.Expect(controllerReconciler.Client.Get(ctx, nn, ci)).To(Succeed())
+				cond := ci.GetStatusCondition(osacv1alpha1.ComputeInstanceConditionProvisioned)
+				g.Expect(cond.Reason).To(Equal(osacv1alpha1.ReasonWaitingForVM))
+			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 		})
 	})
 
