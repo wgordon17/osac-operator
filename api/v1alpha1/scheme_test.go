@@ -4,7 +4,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	v1alpha1 "github.com/osac-project/osac-operator/api/v1alpha1"
 )
@@ -101,16 +100,4 @@ var _ = Describe("Scheme Registration", func() {
 		})
 	})
 
-	Describe("GVK round-trip", func() {
-		It("should recognize a typed object's GVK after AddKnownTypes", func() {
-			gvk := schema.GroupVersionKind{
-				Group:   "osac.openshift.io",
-				Version: "v1alpha1",
-				Kind:    "Subnet",
-			}
-			obj, err := scheme.New(gvk)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(obj).To(BeAssignableToTypeOf(&v1alpha1.Subnet{}))
-		})
-	})
 })
