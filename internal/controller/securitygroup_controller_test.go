@@ -407,11 +407,18 @@ var _ = Describe("SecurityGroupReconciler", func() {
 				}, nil
 			}
 
-			// First reconcile adds finalizer
-			_, err := reconciler.Reconcile(ctx, mcreconcile.Request{Request: ctrl.Request{NamespacedName: key}})
+			req := mcreconcile.Request{Request: ctrl.Request{NamespacedName: key}}
+
+			// First reconcile adds finalizer and sets annotation, then requeues
+			result, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+
+			// Second reconcile triggers the provision job
+			_, err = reconciler.Reconcile(ctx, req)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Fetch updated SecurityGroup after first reconcile to check job state
+			// Fetch updated SecurityGroup to check job state
 			updated := &osacv1alpha1.SecurityGroup{}
 			Expect(fakeClient.Get(ctx, key, updated)).To(Succeed())
 

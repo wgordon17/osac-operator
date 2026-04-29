@@ -177,9 +177,7 @@ func (r *SecurityGroupReconciler) handleUpdate(ctx context.Context, sg *v1alpha1
 		if err := r.Update(ctx, sg); err != nil {
 			return ctrl.Result{}, err
 		}
-		if err := r.Get(ctx, client.ObjectKeyFromObject(sg), sg); err != nil {
-			return ctrl.Result{}, err
-		}
+		return ctrl.Result{}, nil
 	}
 
 	// Compute desired config version from spec and inherited implementation strategy

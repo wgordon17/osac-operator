@@ -157,12 +157,10 @@ func (r *VirtualNetworkReconciler) handleUpdate(ctx context.Context, vnet *v1alp
 	if vnet.Annotations[osacImplementationStrategyAnnotation] != implementationStrategy {
 		vnet.Annotations[osacImplementationStrategyAnnotation] = implementationStrategy
 		log.Info("setting implementation-strategy annotation", "strategy", implementationStrategy)
-		// Preserve the status we've set since Update returns server state (empty status)
-		currentStatus := vnet.Status.DeepCopy()
 		if err := r.Update(ctx, vnet); err != nil {
 			return ctrl.Result{}, err
 		}
-		vnet.Status = *currentStatus
+		return ctrl.Result{}, nil
 	}
 
 	// Compute desired config version from spec

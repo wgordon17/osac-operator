@@ -126,12 +126,20 @@ var _ = Describe("SubnetReconciler", func() {
 		It("should set phase to Progressing on first reconcile", func() {
 			Expect(k8sClient.Create(ctx, subnet)).To(Succeed())
 
-			_, err := reconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{
+			req := mcreconcile.Request{Request: reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      subnet.Name,
 					Namespace: subnet.Namespace,
 				},
-			}})
+			}}
+
+			// First reconcile sets annotation and requeues
+			result, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+
+			// Second reconcile persists the Progressing phase
+			_, err = reconciler.Reconcile(ctx, req)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Fetch updated Subnet

@@ -188,12 +188,10 @@ func (r *SubnetReconciler) handleUpdate(ctx context.Context, subnet *v1alpha1.Su
 	if subnet.Annotations[osacImplementationStrategyAnnotation] != implementationStrategy {
 		subnet.Annotations[osacImplementationStrategyAnnotation] = implementationStrategy
 		log.Info("setting implementation-strategy annotation", "strategy", implementationStrategy)
-		// Preserve the status we've set since Update returns server state (empty status)
-		currentStatus := subnet.Status.DeepCopy()
 		if err := r.Update(ctx, subnet); err != nil {
 			return ctrl.Result{}, err
 		}
-		subnet.Status = *currentStatus
+		return ctrl.Result{}, nil
 	}
 
 	// Compute desired config version from spec and inherited implementation strategy

@@ -100,12 +100,20 @@ var _ = Describe("VirtualNetworkReconciler", func() {
 		It("should set phase to Progressing on first reconcile", func() {
 			Expect(k8sClient.Create(ctx, vnet)).To(Succeed())
 
-			_, err := reconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{
+			req := mcreconcile.Request{Request: reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      vnet.Name,
 					Namespace: vnet.Namespace,
 				},
-			}})
+			}}
+
+			// First reconcile sets annotation and requeues
+			result, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+
+			// Second reconcile persists the Progressing phase
+			_, err = reconciler.Reconcile(ctx, req)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Fetch updated VirtualNetwork
@@ -114,10 +122,12 @@ var _ = Describe("VirtualNetworkReconciler", func() {
 			Expect(updatedVnet.Status.Phase).To(Equal(osacv1alpha1.VirtualNetworkPhaseProgressing))
 		})
 
-		It("should read ImplementationStrategy during reconcile", func() {
+		It("should return early after setting implementation-strategy annotation without triggering a job", func() {
 			Expect(k8sClient.Create(ctx, vnet)).To(Succeed())
 
+			provisionCalled := false
 			mockProvider.triggerProvisionFunc = func(ctx context.Context, resource client.Object) (*provisioning.ProvisionResult, error) {
+				provisionCalled = true
 				return &provisioning.ProvisionResult{
 					JobID:        "test-job-123",
 					InitialState: osacv1alpha1.JobStatePending,
@@ -125,19 +135,33 @@ var _ = Describe("VirtualNetworkReconciler", func() {
 				}, nil
 			}
 
-			_, err := reconciler.Reconcile(ctx, mcreconcile.Request{Request: reconcile.Request{
+			req := mcreconcile.Request{Request: reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      vnet.Name,
 					Namespace: vnet.Namespace,
 				},
-			}})
-			Expect(err).NotTo(HaveOccurred())
+			}}
 
-			// Verify job was triggered (confirms ImplementationStrategy was read successfully)
+			// First reconcile: should set annotation and requeue without triggering provision
+			result, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero(), "expected early return after annotation update; watch triggers next reconcile")
+			Expect(provisionCalled).To(BeFalse(), "provision should not be triggered during annotation update reconcile")
+
+			// Verify annotation was set
 			updatedVnet := &osacv1alpha1.VirtualNetwork{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: vnet.Name, Namespace: vnet.Namespace}, updatedVnet)).To(Succeed())
+			Expect(updatedVnet.Annotations[osacImplementationStrategyAnnotation]).To(Equal("cudn-net"))
+
+			// Second reconcile: should now trigger the provision job
+			result, err = reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(provisionCalled).To(BeTrue(), "provision should be triggered on the follow-up reconcile")
+
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: vnet.Name, Namespace: vnet.Namespace}, updatedVnet)).To(Succeed())
 			latestJob := provisioning.FindLatestJobByType(updatedVnet.Status.Jobs, osacv1alpha1.JobTypeProvision)
 			Expect(latestJob).NotTo(BeNil())
+			Expect(latestJob.JobID).To(Equal("test-job-123"))
 		})
 
 		It("should requeue if ImplementationStrategy not set", func() {
