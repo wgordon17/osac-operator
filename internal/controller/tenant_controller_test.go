@@ -403,4 +403,16 @@ var _ = Describe("groupByTier", func() {
 		Expect(groups).To(HaveLen(1))
 		Expect(groups["fast"]).To(HaveLen(2))
 	})
+
+	It("ignores tier values that don't match CRD pattern after lowercasing", func() {
+		scs := []storagev1.StorageClass{
+			*makeSC("sc-valid", "tenant-a", "fast"),
+			*makeSC("sc-invalid-chars", "tenant-a", "not valid!"),
+			*makeSC("sc-invalid-start", "tenant-a", "-leading-dash"),
+			*makeSC("sc-invalid-end", "tenant-a", "trailing-dash-"),
+		}
+		groups := groupByTier(scs)
+		Expect(groups).To(HaveLen(1))
+		Expect(groups).To(HaveKey("fast"))
+	})
 })

@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -197,15 +198,9 @@ func (r *tierResolutionResult) conditionMessage() string {
 	return strings.Join(parts, "; ")
 }
 
-// storageTierFromLabel reads the osac.openshift.io/storage-tier label from a
-// StorageClass, normalized to lowercase. Returns "default" if the label is
-// absent or empty.
-func storageTierFromLabel(sc *storagev1.StorageClass) string {
-	if tier := sc.GetLabels()[osacStorageTierLabel]; tier != "" {
-		return strings.ToLower(tier)
-	}
-	return "default"
-}
+// tierLabelPattern matches values that conform to the ResolvedStorageClass.Tier
+// CRD validation: lowercase alphanumeric with dashes, dots, underscores, 1-63 chars.
+var tierLabelPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$`)
 
 // joinStorageClassNames returns StorageClass metadata names as a comma-separated string for
 // messages and the same values as a slice for structured logging.
@@ -218,15 +213,20 @@ func joinStorageClassNames(items []storagev1.StorageClass) (joined string, names
 }
 
 // groupByTier groups StorageClasses by their osac.openshift.io/storage-tier label value.
-// StorageClasses missing the label are ignored.
+// StorageClasses missing the label or with values that don't match the CRD tier
+// pattern (after lowercase normalization) are ignored.
 func groupByTier(scList []storagev1.StorageClass) map[string][]storagev1.StorageClass {
 	groups := make(map[string][]storagev1.StorageClass)
 	for _, sc := range scList {
-		tier, exists := sc.GetLabels()[osacStorageTierLabel]
-		if !exists || tier == "" {
+		raw, exists := sc.GetLabels()[osacStorageTierLabel]
+		if !exists || raw == "" {
 			continue
 		}
-		groups[strings.ToLower(tier)] = append(groups[strings.ToLower(tier)], sc)
+		tier := strings.ToLower(raw)
+		if !tierLabelPattern.MatchString(tier) {
+			continue
+		}
+		groups[tier] = append(groups[tier], sc)
 	}
 	return groups
 }
